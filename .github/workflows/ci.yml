@@ -1,17 +1,12 @@
-name: Customers Service CI Pipeline
+name: Enterprise AKS Deployment Pipeline
 
 on:
   push:
     branches: [ "main" ]
-    # Only trigger if changes happen in the customers service or this pipeline
-    paths:
-      - 'spring-petclinic-customers-service/**'
-      - '.github/workflows/ci.yml'
 
 jobs:
-  build-and-containerize:
-    runs-on: ubuntu-latest # This is the free Microsoft cloud server
-
+  build-and-deploy:
+    runs-on: ubuntu-latest
     steps:
     - name: 📥 Checkout Code
       uses: actions/checkout@v3
@@ -23,12 +18,25 @@ jobs:
         distribution: 'temurin'
         cache: maven
 
-    - name: 🔨 Compile Java Code (Maven)
-      # This compiles the code and creates the target/app.jar file
+    - name: 🔨 Compile Java Code
       run: ./mvnw clean package -pl spring-petclinic-customers-service -am -DskipTests
 
-    - name: 🐳 Build Docker Image
-      # This uses your Dockerfile to package the .jar into a container
+    - name: 🐳 Build and Push Docker Image
       run: |
         cd spring-petclinic-customers-service
-        docker build -t petclinic-customers:latest .
+        docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/petclinic-customers:latest .
+        docker login ${{ secrets.ACR_LOGIN_SERVER }} -u ${{ secrets.ACR_USERNAME }} -p ${{ secrets.ACR_PASSWORD }}
+        docker push ${{ secrets.ACR_LOGIN_SERVER }}/petclinic-customers:latest
+
+    - name: ☸️ Set AKS Context
+      uses: azure/k8s-set-context@v3
+      with:
+        kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+    - name: 🚀 Deploy to Kubernetes
+      uses: Azure/k8s-deploy@v4
+      with:
+        manifests: |
+          k8s-deployment.yaml
+        images: |
+          ${{ secrets.ACR_LOGIN_SERVER }}/petclinic-customers:latest
